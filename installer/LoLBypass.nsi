@@ -81,15 +81,43 @@ VIAddVersionKey "LegalCopyright" "${PUBLISHER}"
 !macroend
 
 ; ---------- sections (run in this order) ----------
-Section "Windows Defender exclusion (recommended)" SecDefender
-  ; Runs BEFORE any file is extracted so Defender can't quarantine winws.exe / WinDivert.
-  DetailPrint "Adding Windows Defender exclusion for $INSTDIR ..."
-  nsExec::ExecToLog 'powershell -NoProfile -ExecutionPolicy Bypass -Command "Add-MpPreference -ExclusionPath ''$INSTDIR''"'
-  Pop $0
-  ${If} $0 != 0
-    DetailPrint "Could not add the Defender exclusion (another antivirus may be active)."
-  ${EndIf}
-  WriteRegDWORD HKLM "${UNINSTKEY}" "DefenderExclusion" 1
+Section "!Windows Defender exclusion (required)" SecDefender
+  SectionIn RO   ; cannot be unchecked - the install does not proceed without it
+  ; Must run BEFORE any file is extracted, so Defender never quarantines winws.exe / WinDivert.
+  ; Tamper Protection (on by default) blocks apps from adding exclusions, so if the silent
+  ; attempt fails we guide the user through the Windows Security UI and WAIT until it's done.
+  CreateDirectory "$INSTDIR"   ; so the folder can be browsed/selected in the exclusions dialog
+  StrCpy $R1 ""                ; "already opened the Security window" flag
+
+  defender_check:
+    ; exit 0 = exclusion present, 1 = missing (Defender active), 2 = Defender not the active AV
+    nsExec::Exec 'powershell -NoProfile -ExecutionPolicy Bypass -Command "$$s=Get-MpComputerStatus -ErrorAction SilentlyContinue; if(-not $$s -or -not $$s.RealTimeProtectionEnabled){exit 2}; try{Add-MpPreference -ExclusionPath ''$INSTDIR'' -ErrorAction Stop}catch{}; if(@((Get-MpPreference).ExclusionPath | %{$$_.TrimEnd(''\'')}) -contains ''$INSTDIR''){exit 0}else{exit 1}"'
+    Pop $0
+    ${If} $0 == 0
+      DetailPrint "Windows Defender exclusion is set for $INSTDIR"
+      WriteRegDWORD HKLM "${UNINSTKEY}" "DefenderExclusion" 1
+      Goto defender_done
+    ${EndIf}
+    ${If} $0 == 2
+      DetailPrint "Windows Defender is not the active antivirus - skipping its exclusion."
+      DetailPrint "If another antivirus flags the app, exclude $INSTDIR in it."
+      Goto defender_done
+    ${EndIf}
+
+    ${If} $R1 == ""
+      StrCpy $R1 "1"
+      nsExec::Exec 'powershell -NoProfile -Command "Set-Clipboard -Value ''$INSTDIR''"'   ; copy path to paste
+      Exec 'cmd /c start windowsdefender://threatsettings'
+      Sleep 1200
+    ${EndIf}
+
+    MessageBox MB_RETRYCANCEL|MB_ICONINFORMATION "This step is required. Windows blocks apps from changing antivirus settings (Tamper Protection), so please add this folder exclusion yourself. It takes about 20 seconds and stops Defender deleting the files.$\r$\n$\r$\nIn the Windows Security window that just opened:$\r$\n  1.  Scroll down to 'Exclusions' and click 'Add or remove exclusions'.$\r$\n  2.  Click 'Add an exclusion'  >  'Folder'.$\r$\n  3.  Paste this path (already copied for you) and click 'Select Folder':$\r$\n$\r$\n        $INSTDIR$\r$\n$\r$\nThen click Retry." IDRETRY defender_check
+    ; user clicked Cancel
+    MessageBox MB_YESNO|MB_ICONEXCLAMATION "Without this exclusion Defender will delete the bypass files and the app will not work, so installation cannot continue.$\r$\n$\r$\nCancel the installation?" IDNO defender_check
+    RMDir "$INSTDIR"
+    Quit
+
+  defender_done:
 SectionEnd
 
 Section "!${APPNAME} (required)" SecMain
@@ -115,6 +143,7 @@ Section "!${APPNAME} (required)" SecMain
 
   WriteUninstaller "$INSTDIR\Uninstall.exe"
   CreateShortcut "$SMPROGRAMS\${APPNAME}.lnk" "$INSTDIR\${APPEXE}" "" "$INSTDIR\${APPEXE}" 0
+  CreateShortcut "$SMPROGRAMS\Uninstall ${APPNAME}.lnk" "$INSTDIR\Uninstall.exe" "" "$INSTDIR\icon.ico" 0
 
   WriteRegStr   HKLM "${UNINSTKEY}" "DisplayName" "${APPNAME}"
   WriteRegStr   HKLM "${UNINSTKEY}" "DisplayVersion" "${VERSION}"
@@ -148,7 +177,7 @@ Section "-Tasks"
 SectionEnd
 
 !insertmacro MUI_FUNCTION_DESCRIPTION_BEGIN
-  !insertmacro MUI_DESCRIPTION_TEXT ${SecDefender} "Antivirus apps often flag GoodbyeDPI / zapret (WinDivert packet driver) as a false positive. This excludes the install folder from Windows Defender so the files aren't deleted. Recommended."
+  !insertmacro MUI_DESCRIPTION_TEXT ${SecDefender} "Required. Antivirus apps flag GoodbyeDPI / zapret (WinDivert packet driver) as a false positive. The installer adds (or walks you through adding) a Windows Defender exclusion for the install folder before copying files, so they aren't deleted. Installation does not continue until this is done."
   !insertmacro MUI_DESCRIPTION_TEXT ${SecMain}     "The app, GoodbyeDPI and zapret."
   !insertmacro MUI_DESCRIPTION_TEXT ${SecStartup}  "Start the bypass automatically, hidden in the tray, every time you sign in to Windows (no admin prompt)."
   !insertmacro MUI_DESCRIPTION_TEXT ${SecDesktop}  "Add a ${APPNAME} shortcut to the Desktop."
@@ -183,6 +212,7 @@ Section "Uninstall"
 
   Delete "$DESKTOP\${APPNAME}.lnk"
   Delete "$SMPROGRAMS\${APPNAME}.lnk"
+  Delete "$SMPROGRAMS\Uninstall ${APPNAME}.lnk"
   RMDir /r "$INSTDIR\bin"
   RMDir /r "$INSTDIR\licenses"
   Delete "$INSTDIR\${APPEXE}"
