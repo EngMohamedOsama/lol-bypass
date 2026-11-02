@@ -1,4 +1,4 @@
-; LoL Bypass installer (NSIS 3, Modern UI 2)
+﻿; LoL Bypass installer (NSIS 3, Modern UI 2)
 ; Build:  makensis -DVERSION=1.0.0 -DBUILD_DIR=<app build dir> -DPAYLOAD_DIR=<repo>/payload LoLBypass.nsi
 
 Unicode true
@@ -37,6 +37,11 @@ VIAddVersionKey "LegalCopyright" "${PUBLISHER}"
 !include "MUI2.nsh"
 !include "x64.nsh"
 !include "LogicLib.nsh"
+!include "TextFunc.nsh"
+
+; bilingual "why" shown in the exclusion dialogs (EN + AR)
+!define WHY_EN "Why this step: the bypass uses a network driver (WinDivert) to get past the ISP block on Riot. Antivirus engines flag it as a false positive because some malware uses a similar technique - but it is safe and open-source. The exclusion just stops your antivirus from deleting it."
+!define WHY_AR "ليه الخطوة دي: البرنامج بيستخدم أداة شبكة اسمها WinDivert عشان يعدّي حظر النت على Riot. مضاد الفيروسات بيعتبرها إنذار كاذب لأن فيه فيروسات بتستخدم طريقة شبيهة - لكنها آمنة ومفتوحة المصدر. الاستثناء ده بس بيمنع المضاد إنه يمسحها."
 
 ; ---------- look ----------
 !define MUI_ICON "icon.ico"
@@ -111,13 +116,52 @@ Section "!Windows Defender exclusion (required)" SecDefender
       Sleep 1200
     ${EndIf}
 
-    MessageBox MB_RETRYCANCEL|MB_ICONINFORMATION "This step is required. Windows blocks apps from changing antivirus settings (Tamper Protection), so please add this folder exclusion yourself. It takes about 20 seconds and stops Defender deleting the files.$\r$\n$\r$\nIn the Windows Security window that just opened:$\r$\n  1.  Scroll down to 'Exclusions' and click 'Add or remove exclusions'.$\r$\n  2.  Click 'Add an exclusion'  >  'Folder'.$\r$\n  3.  Paste this path (already copied for you) and click 'Select Folder':$\r$\n$\r$\n        $INSTDIR$\r$\n$\r$\nThen click Retry." IDRETRY defender_check
+    MessageBox MB_RETRYCANCEL|MB_ICONINFORMATION "${WHY_EN}$\r$\n$\r$\n${WHY_AR}$\r$\n$\r$\n----------------------------------------$\r$\n$\r$\nThis step is required. Windows blocks apps from changing antivirus settings (Tamper Protection), so please add the exclusion yourself. In the Windows Security window that just opened:$\r$\n  1.  Scroll down to 'Exclusions' and click 'Add or remove exclusions'.$\r$\n  2.  Click 'Add an exclusion'  >  'Folder'.$\r$\n  3.  Paste this path (already copied for you) and click 'Select Folder':$\r$\n$\r$\n        $INSTDIR$\r$\n$\r$\nThen click Retry  /  بعد ما تضيفه دوس Retry." IDRETRY defender_check
     ; user clicked Cancel
     MessageBox MB_YESNO|MB_ICONEXCLAMATION "Without this exclusion Defender will delete the bypass files and the app will not work, so installation cannot continue.$\r$\n$\r$\nCancel the installation?" IDNO defender_check
     RMDir "$INSTDIR"
     Quit
 
   defender_done:
+SectionEnd
+
+Section "-ThirdPartyAV"
+  ; Runs before files are written. A non-Defender antivirus can't be scripted (no API),
+  ; so we detect which one is active and show the exact place to add a folder exclusion.
+  CreateDirectory "$INSTDIR"
+  nsExec::ExecToStack 'powershell -NoProfile -ExecutionPolicy Bypass -Command "$$n=(Get-CimInstance -Namespace root/SecurityCenter2 -ClassName AntiVirusProduct -EA SilentlyContinue | ?{$$_.displayName -notmatch ''Defender''} | select -First 1).displayName; if(-not $$n){[Console]::Out.Write(''none'')}elseif($$n -match ''Kaspersky''){[Console]::Out.Write(''kaspersky'')}elseif($$n -match ''Avast''){[Console]::Out.Write(''avast'')}elseif($$n -match ''AVG''){[Console]::Out.Write(''avg'')}elseif($$n -match ''ESET|NOD32''){[Console]::Out.Write(''eset'')}elseif($$n -match ''Bitdefender''){[Console]::Out.Write(''bitdefender'')}elseif($$n -match ''Malwarebytes''){[Console]::Out.Write(''malwarebytes'')}elseif($$n -match ''Norton''){[Console]::Out.Write(''norton'')}elseif($$n -match ''McAfee''){[Console]::Out.Write(''mcafee'')}elseif($$n -match ''Avira''){[Console]::Out.Write(''avira'')}else{[Console]::Out.Write(''other'')}"'
+  Pop $0
+  Pop $1
+  ${TrimNewLines} $1 $1
+  ${If} $1 == "none"
+    Goto tpav_done
+  ${EndIf}
+
+  nsExec::Exec 'powershell -NoProfile -Command "Set-Clipboard -Value ''$INSTDIR''"'
+  StrCpy $2 "Open your antivirus and add a folder exclusion / exception / allow-list entry for the folder below."
+  ${If} $1 == "kaspersky"
+    StrCpy $2 "Kaspersky: Settings (gear icon) > Security settings > Exclusions and actions on object detection > Manage exclusions > Add."
+  ${ElseIf} $1 == "avast"
+    StrCpy $2 "Avast: Menu > Settings > General > Blocked & Allowed apps (Exceptions) > Add Exception."
+  ${ElseIf} $1 == "avg"
+    StrCpy $2 "AVG: Menu > Settings > General > Exceptions > Add Exception."
+  ${ElseIf} $1 == "eset"
+    StrCpy $2 "ESET: press F5 > Detection engine > Exclusions > Performance exclusions > Add > Folder."
+  ${ElseIf} $1 == "bitdefender"
+    StrCpy $2 "Bitdefender: Protection > Antivirus > Settings > Manage Exceptions > Add an Exception > Folder."
+  ${ElseIf} $1 == "malwarebytes"
+    StrCpy $2 "Malwarebytes: Settings > Allow List > Add > Allow a file or folder."
+  ${ElseIf} $1 == "norton"
+    StrCpy $2 "Norton: Settings > Antivirus > Scans and Risks > Items to Exclude from Auto-Protect > Configure > Add Folders."
+  ${ElseIf} $1 == "mcafee"
+    StrCpy $2 "McAfee: PC Security > Real-Time Scanning > Excluded Files > Add file/folder."
+  ${ElseIf} $1 == "avira"
+    StrCpy $2 "Avira: Settings > Security > Protection options > File exceptions > Add."
+  ${EndIf}
+
+  MessageBox MB_OK|MB_ICONINFORMATION "A third-party antivirus was detected on this PC. It may delete the bypass files, so please add this folder as an exclusion in it now. The path is copied to your clipboard - press Ctrl+V to paste:$\r$\n$\r$\n        $INSTDIR$\r$\n$\r$\n$2$\r$\n$\r$\n----------------------------------------$\r$\n$\r$\n${WHY_EN}$\r$\n$\r$\n${WHY_AR}$\r$\n$\r$\nمضاد فيروسات تاني متنصب عندك. ضيف الفولدر اللي فوق كاستثناء فيه قبل ما تكمل (المسار متنسخ، دوس Ctrl+V).$\r$\n$\r$\nClick OK after you've added it  /  دوس OK بعد ما تضيفه."
+
+  tpav_done:
 SectionEnd
 
 Section "!${APPNAME} (required)" SecMain

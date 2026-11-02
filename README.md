@@ -52,8 +52,10 @@ Tested end to end on League of Legends (EUNE). TFT and Runeterra use the same lo
 
 ## Antivirus notes
 
-- **Windows Defender:** handled by the installer (see above).
-- **Other antivirus apps** (Kaspersky, Avast, ESET, ...) may still flag `winws.exe` / `goodbyedpi.exe`, because the WinDivert packet driver they use is a common false positive. Add an exclusion for `C:\Program Files\LoL Bypass` in that antivirus.
+The bypass uses the **WinDivert** packet driver to get past the ISP block. Antivirus engines flag it as a false positive because some malware uses a similar technique — it's safe and open-source. The install folder just needs to be excluded. The installer explains this in English and Arabic as it goes.
+
+- **Windows Defender:** handled during install (automatic, or the guided one-time paste above).
+- **Other antivirus** (Kaspersky, Avast, AVG, ESET, Bitdefender, Malwarebytes, Norton, McAfee, Avira): the installer **detects which one you have** and shows the exact menu path to add the folder exclusion, with the path pre-copied. Third-party antivirus can't be scripted, so this one step is manual.
 - The setup isn't code-signed, so the browser or SmartScreen may warn on download. Choose *Keep* / *More info → Run anyway*.
 
 ## Build from source
