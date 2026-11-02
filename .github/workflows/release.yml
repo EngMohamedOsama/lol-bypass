@@ -1,0 +1,49 @@
+name: Build & Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version (e.g. 1.0.1)'
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Version
+        id: v
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then V="${{ github.event.inputs.version }}"; else V="${GITHUB_REF_NAME#v}"; fi
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Install NSIS
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq nsis
+
+      - name: Build app + installer
+        run: ./build.sh "${{ steps.v.outputs.version }}"
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          V="${{ steps.v.outputs.version }}"
+          FILE="installer/LoLBypass-Setup-$V.exe"
+          sha256sum "$FILE" | tee "$FILE.sha256"
+          NOTES=".github/release-notes.md"
+          if gh release view "v$V" >/dev/null 2>&1; then
+            gh release upload "v$V" "$FILE" "$FILE.sha256" --clobber
+          else
+            gh release create "v$V" "$FILE" "$FILE.sha256" --title "LoL Bypass $V" --notes-file "$NOTES" --target "$GITHUB_SHA"
+          fi
