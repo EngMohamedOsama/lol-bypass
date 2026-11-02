@@ -9,7 +9,7 @@
     <RootNamespace>LoLBypass</RootNamespace>
     <ApplicationIcon>icon.ico</ApplicationIcon>
     <ApplicationManifest>app.manifest</ApplicationManifest>
-    <Version>1.0.1</Version>
+    <Version>1.0.2</Version>
     <Product>LoL Bypass</Product>
     <Description>Play Riot games without a VPN</Description>
     <Company>Sarab Web</Company>

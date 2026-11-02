@@ -11,10 +11,9 @@ It's a normal Windows app with a Riot-style window. It starts hidden in the tray
 
 1. Download **`LoLBypass-Setup-x.y.z.exe`** from the [**Releases**](../../releases/latest) page. If your browser warns on the download, choose **Keep**.
 2. Run it and click **Yes** on the admin prompt.
-3. **Windows Defender exclusion (required, one time).** The bypass uses the WinDivert packet driver, which antivirus flags as a false positive, so the install folder must be excluded *before* the files are written. The installer adds it automatically when it can. If **Tamper Protection** is on (Windows 11 default), no app is allowed to add it for you — not even as admin — so the installer opens the right Defender page, **copies the folder path to your clipboard**, and waits. Just:
-   - Scroll to **Exclusions → Add or remove exclusions → Add an exclusion → Folder**
-   - **Paste** (Ctrl+V) and click **Select Folder**, then click **Retry** in the installer.
-   - The install will not continue until this is done, so the files are never quarantined.
+3. **Antivirus exclusion step.** The bypass uses the WinDivert packet driver, which antivirus flags as a false positive, so the install folder is excluded *before* any file is written. On this wizard page:
+   - If your antivirus allows it, the exclusion is added automatically — just click **Next**.
+   - Otherwise click **Open exclusions page** (it opens Windows Security straight at Exclusions and copies the path), then **Add an exclusion → Folder**, paste (**Ctrl+V**), **Select Folder**, and click **I added it → Next**. There's also a **Copy path** button.
 4. Keep **Start with Windows** and **Desktop shortcut** ticked, and finish. The app opens and the bypass starts.
 
 Requires 64-bit Windows 10 or 11. .NET Framework 4.8 is already built into Windows.

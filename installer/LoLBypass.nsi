@@ -1,4 +1,4 @@
-﻿; LoL Bypass installer (NSIS 3, Modern UI 2)
+; LoL Bypass installer (NSIS 3, Modern UI 2)
 ; Build:  makensis -DVERSION=1.0.0 -DBUILD_DIR=<app build dir> -DPAYLOAD_DIR=<repo>/payload LoLBypass.nsi
 
 Unicode true
@@ -37,11 +37,13 @@ VIAddVersionKey "LegalCopyright" "${PUBLISHER}"
 !include "MUI2.nsh"
 !include "x64.nsh"
 !include "LogicLib.nsh"
-!include "TextFunc.nsh"
+!include "nsDialogs.nsh"
+!include "WinMessages.nsh"
 
-; bilingual "why" shown in the exclusion dialogs (EN + AR)
-!define WHY_EN "Why this step: the bypass uses a network driver (WinDivert) to get past the ISP block on Riot. Antivirus engines flag it as a false positive because some malware uses a similar technique - but it is safe and open-source. The exclusion just stops your antivirus from deleting it."
-!define WHY_AR "ليه الخطوة دي: البرنامج بيستخدم أداة شبكة اسمها WinDivert عشان يعدّي حظر النت على Riot. مضاد الفيروسات بيعتبرها إنذار كاذب لأن فيه فيروسات بتستخدم طريقة شبيهة - لكنها آمنة ومفتوحة المصدر. الاستثناء ده بس بيمنع المضاد إنه يمسحها."
+Var Dialog
+Var PathBox
+Var StatusLabel
+Var AvOk
 
 ; ---------- look ----------
 !define MUI_ICON "icon.ico"
@@ -67,6 +69,7 @@ VIAddVersionKey "LegalCopyright" "${PUBLISHER}"
 !insertmacro MUI_PAGE_WELCOME
 !insertmacro MUI_PAGE_COMPONENTS
 !insertmacro MUI_PAGE_DIRECTORY
+Page custom AvPageCreate AvPageLeave
 !insertmacro MUI_PAGE_INSTFILES
 !insertmacro MUI_PAGE_FINISH
 
@@ -85,85 +88,86 @@ VIAddVersionKey "LegalCopyright" "${PUBLISHER}"
   Sleep 800
 !macroend
 
-; ---------- sections (run in this order) ----------
-Section "!Windows Defender exclusion (required)" SecDefender
-  SectionIn RO   ; cannot be unchecked - the install does not proceed without it
-  ; Must run BEFORE any file is extracted, so Defender never quarantines winws.exe / WinDivert.
-  ; Tamper Protection (on by default) blocks apps from adding exclusions, so if the silent
-  ; attempt fails we guide the user through the Windows Security UI and WAIT until it's done.
-  CreateDirectory "$INSTDIR"   ; so the folder can be browsed/selected in the exclusions dialog
-  StrCpy $R1 ""                ; "already opened the Security window" flag
+; ---------- antivirus exclusion wizard page (runs before files are written) ----------
+Function AvCopyPath
+  nsExec::Exec 'cmd /c <nul set /p x=$INSTDIR| clip'
+  ${NSD_SetText} $StatusLabel "Path copied. Now click 'Open exclusions page'."
+FunctionEnd
 
-  defender_check:
-    ; exit 0 = exclusion present, 1 = missing (Defender active), 2 = Defender not the active AV
-    nsExec::Exec 'powershell -NoProfile -ExecutionPolicy Bypass -Command "$$s=Get-MpComputerStatus -ErrorAction SilentlyContinue; if(-not $$s -or -not $$s.RealTimeProtectionEnabled){exit 2}; try{Add-MpPreference -ExclusionPath ''$INSTDIR'' -ErrorAction Stop}catch{}; if(@((Get-MpPreference).ExclusionPath | %{$$_.TrimEnd(''\'')}) -contains ''$INSTDIR''){exit 0}else{exit 1}"'
-    Pop $0
-    ${If} $0 == 0
-      DetailPrint "Windows Defender exclusion is set for $INSTDIR"
-      WriteRegDWORD HKLM "${UNINSTKEY}" "DefenderExclusion" 1
-      Goto defender_done
-    ${EndIf}
-    ${If} $0 == 2
-      DetailPrint "Windows Defender is not the active antivirus - skipping its exclusion."
-      DetailPrint "If another antivirus flags the app, exclude $INSTDIR in it."
-      Goto defender_done
-    ${EndIf}
+Function AvOpenPage
+  nsExec::Exec 'cmd /c <nul set /p x=$INSTDIR| clip'
+  Exec 'cmd /c start windowsdefender://exclusions/'
+  ${NSD_SetText} $StatusLabel "Add a Folder exclusion, paste (Ctrl+V), then click 'I added it'."
+FunctionEnd
 
-    ${If} $R1 == ""
-      StrCpy $R1 "1"
-      nsExec::Exec 'powershell -NoProfile -Command "Set-Clipboard -Value ''$INSTDIR''"'   ; copy path to paste
-      Exec 'cmd /c start windowsdefender://threatsettings'
-      Sleep 1200
-    ${EndIf}
-
-    MessageBox MB_RETRYCANCEL|MB_ICONINFORMATION "${WHY_EN}$\r$\n$\r$\n${WHY_AR}$\r$\n$\r$\n----------------------------------------$\r$\n$\r$\nThis step is required. Windows blocks apps from changing antivirus settings (Tamper Protection), so please add the exclusion yourself. In the Windows Security window that just opened:$\r$\n  1.  Scroll down to 'Exclusions' and click 'Add or remove exclusions'.$\r$\n  2.  Click 'Add an exclusion'  >  'Folder'.$\r$\n  3.  Paste this path (already copied for you) and click 'Select Folder':$\r$\n$\r$\n        $INSTDIR$\r$\n$\r$\nThen click Retry  /  بعد ما تضيفه دوس Retry." IDRETRY defender_check
-    ; user clicked Cancel
-    MessageBox MB_YESNO|MB_ICONEXCLAMATION "Without this exclusion Defender will delete the bypass files and the app will not work, so installation cannot continue.$\r$\n$\r$\nCancel the installation?" IDNO defender_check
-    RMDir "$INSTDIR"
-    Quit
-
-  defender_done:
-SectionEnd
-
-Section "-ThirdPartyAV"
-  ; Runs before files are written. A non-Defender antivirus can't be scripted (no API),
-  ; so we detect which one is active and show the exact place to add a folder exclusion.
-  CreateDirectory "$INSTDIR"
-  nsExec::ExecToStack 'powershell -NoProfile -ExecutionPolicy Bypass -Command "$$n=(Get-CimInstance -Namespace root/SecurityCenter2 -ClassName AntiVirusProduct -EA SilentlyContinue | ?{$$_.displayName -notmatch ''Defender''} | select -First 1).displayName; if(-not $$n){[Console]::Out.Write(''none'')}elseif($$n -match ''Kaspersky''){[Console]::Out.Write(''kaspersky'')}elseif($$n -match ''Avast''){[Console]::Out.Write(''avast'')}elseif($$n -match ''AVG''){[Console]::Out.Write(''avg'')}elseif($$n -match ''ESET|NOD32''){[Console]::Out.Write(''eset'')}elseif($$n -match ''Bitdefender''){[Console]::Out.Write(''bitdefender'')}elseif($$n -match ''Malwarebytes''){[Console]::Out.Write(''malwarebytes'')}elseif($$n -match ''Norton''){[Console]::Out.Write(''norton'')}elseif($$n -match ''McAfee''){[Console]::Out.Write(''mcafee'')}elseif($$n -match ''Avira''){[Console]::Out.Write(''avira'')}else{[Console]::Out.Write(''other'')}"'
+Function AvRefresh
+  ; exit 0 = exclusion present, 1 = Defender active but missing, 2 = Defender not the active AV
+  nsExec::Exec 'powershell -NoProfile -ExecutionPolicy Bypass -Command "$$s=Get-MpComputerStatus -ErrorAction SilentlyContinue; if(-not $$s -or -not $$s.RealTimeProtectionEnabled){exit 2}; try{Add-MpPreference -ExclusionPath ''$INSTDIR'' -ErrorAction Stop}catch{}; if(@((Get-MpPreference).ExclusionPath | %{$$_.TrimEnd(''\'')}) -contains ''$INSTDIR''){exit 0}else{exit 1}"'
   Pop $0
-  Pop $1
-  ${TrimNewLines} $1 $1
-  ${If} $1 == "none"
-    Goto tpav_done
+  ${If} $0 == 0
+    StrCpy $AvOk 1
+    WriteRegDWORD HKLM "${UNINSTKEY}" "DefenderExclusion" 1
+    ${NSD_SetText} $StatusLabel "Status: exclusion added. Click Next."
+  ${ElseIf} $0 == 2
+    StrCpy $AvOk 1
+    ${NSD_SetText} $StatusLabel "Status: Defender isn't the active antivirus. If another AV flags the app, add this folder to its exclusions. You can click Next."
+  ${Else}
+    StrCpy $AvOk 0
+    ${NSD_SetText} $StatusLabel "Status: not added yet."
+  ${EndIf}
+FunctionEnd
+
+Function AvCheckClick
+  Call AvRefresh
+FunctionEnd
+
+Function AvPageCreate
+  !insertmacro MUI_HEADER_TEXT "Antivirus exclusion" "One quick step so your antivirus doesn't delete the app."
+  CreateDirectory "$INSTDIR"
+  nsDialogs::Create 1018
+  Pop $Dialog
+  ${If} $Dialog == error
+    Abort
   ${EndIf}
 
-  nsExec::Exec 'powershell -NoProfile -Command "Set-Clipboard -Value ''$INSTDIR''"'
-  StrCpy $2 "Open your antivirus and add a folder exclusion / exception / allow-list entry for the folder below."
-  ${If} $1 == "kaspersky"
-    StrCpy $2 "Kaspersky: Settings (gear icon) > Security settings > Exclusions and actions on object detection > Manage exclusions > Add."
-  ${ElseIf} $1 == "avast"
-    StrCpy $2 "Avast: Menu > Settings > General > Blocked & Allowed apps (Exceptions) > Add Exception."
-  ${ElseIf} $1 == "avg"
-    StrCpy $2 "AVG: Menu > Settings > General > Exceptions > Add Exception."
-  ${ElseIf} $1 == "eset"
-    StrCpy $2 "ESET: press F5 > Detection engine > Exclusions > Performance exclusions > Add > Folder."
-  ${ElseIf} $1 == "bitdefender"
-    StrCpy $2 "Bitdefender: Protection > Antivirus > Settings > Manage Exceptions > Add an Exception > Folder."
-  ${ElseIf} $1 == "malwarebytes"
-    StrCpy $2 "Malwarebytes: Settings > Allow List > Add > Allow a file or folder."
-  ${ElseIf} $1 == "norton"
-    StrCpy $2 "Norton: Settings > Antivirus > Scans and Risks > Items to Exclude from Auto-Protect > Configure > Add Folders."
-  ${ElseIf} $1 == "mcafee"
-    StrCpy $2 "McAfee: PC Security > Real-Time Scanning > Excluded Files > Add file/folder."
-  ${ElseIf} $1 == "avira"
-    StrCpy $2 "Avira: Settings > Security > Protection options > File exceptions > Add."
+  ${NSD_CreateLabel} 0 0 100% 34u "The app uses a network driver (WinDivert) that antivirus wrongly flags as a virus. It's safe and open-source. Add this folder as an exclusion so the files aren't deleted:"
+  Pop $0
+
+  ${NSD_CreateText} 0 38u 73% 13u "$INSTDIR"
+  Pop $PathBox
+  SendMessage $PathBox ${EM_SETREADONLY} 1 0
+
+  ${NSD_CreateButton} 75% 37u 25% 14u "Copy path"
+  Pop $0
+  ${NSD_OnClick} $0 AvCopyPath
+
+  ${NSD_CreateButton} 0 58u 49% 15u "Open exclusions page"
+  Pop $0
+  ${NSD_OnClick} $0 AvOpenPage
+
+  ${NSD_CreateButton} 51% 58u 49% 15u "I added it"
+  Pop $0
+  ${NSD_OnClick} $0 AvCheckClick
+
+  ${NSD_CreateLabel} 0 80u 100% 28u "1.  Open exclusions page   2.  Add an exclusion > Folder, paste (Ctrl+V), Select Folder   3.  Click 'I added it', then Next."
+  Pop $0
+
+  ${NSD_CreateLabel} 0 112u 100% 24u ""
+  Pop $StatusLabel
+
+  Call AvRefresh    ; auto-adds silently if Tamper Protection is off; otherwise shows "not added yet"
+  nsDialogs::Show
+FunctionEnd
+
+Function AvPageLeave
+  ${If} $AvOk != 1
+    MessageBox MB_OKCANCEL|MB_ICONEXCLAMATION "The exclusion isn't in place yet - your antivirus will delete the app without it.$\r$\n$\r$\nOK = go back and add it.      Cancel = install anyway." IDCANCEL av_continue
+    Abort
+    av_continue:
   ${EndIf}
+FunctionEnd
 
-  MessageBox MB_OK|MB_ICONINFORMATION "A third-party antivirus was detected on this PC. It may delete the bypass files, so please add this folder as an exclusion in it now. The path is copied to your clipboard - press Ctrl+V to paste:$\r$\n$\r$\n        $INSTDIR$\r$\n$\r$\n$2$\r$\n$\r$\n----------------------------------------$\r$\n$\r$\n${WHY_EN}$\r$\n$\r$\n${WHY_AR}$\r$\n$\r$\nمضاد فيروسات تاني متنصب عندك. ضيف الفولدر اللي فوق كاستثناء فيه قبل ما تكمل (المسار متنسخ، دوس Ctrl+V).$\r$\n$\r$\nClick OK after you've added it  /  دوس OK بعد ما تضيفه."
-
-  tpav_done:
-SectionEnd
-
+; ---------- sections ----------
 Section "!${APPNAME} (required)" SecMain
   SectionIn RO
   !insertmacro StopEverything
@@ -221,7 +225,6 @@ Section "-Tasks"
 SectionEnd
 
 !insertmacro MUI_FUNCTION_DESCRIPTION_BEGIN
-  !insertmacro MUI_DESCRIPTION_TEXT ${SecDefender} "Required. Antivirus apps flag GoodbyeDPI / zapret (WinDivert packet driver) as a false positive. The installer adds (or walks you through adding) a Windows Defender exclusion for the install folder before copying files, so they aren't deleted. Installation does not continue until this is done."
   !insertmacro MUI_DESCRIPTION_TEXT ${SecMain}     "The app, GoodbyeDPI and zapret."
   !insertmacro MUI_DESCRIPTION_TEXT ${SecStartup}  "Start the bypass automatically, hidden in the tray, every time you sign in to Windows (no admin prompt)."
   !insertmacro MUI_DESCRIPTION_TEXT ${SecDesktop}  "Add a ${APPNAME} shortcut to the Desktop."
