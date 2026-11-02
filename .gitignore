@@ -1,1 +1,6 @@
-bypass.log
+build/
+bin/
+obj/
+!payload/bin/
+installer/*.exe
+*.log
