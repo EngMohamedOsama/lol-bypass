@@ -100,9 +100,15 @@ Function AvOpenPage
   ${NSD_SetText} $StatusLabel "Add a Folder exclusion, paste (Ctrl+V), then click 'I added it'."
 FunctionEnd
 
+Function AvSetNext
+  ; enable/disable the Next (Install) button - control id 1 on the wizard
+  GetDlgItem $1 $HWNDPARENT 1
+  EnableWindow $1 $AvOk
+FunctionEnd
+
 Function AvRefresh
-  ; exit 0 = exclusion present, 1 = Defender active but missing, 2 = Defender not the active AV
-  nsExec::Exec 'powershell -NoProfile -ExecutionPolicy Bypass -Command "$$s=Get-MpComputerStatus -ErrorAction SilentlyContinue; if(-not $$s -or -not $$s.RealTimeProtectionEnabled){exit 2}; try{Add-MpPreference -ExclusionPath ''$INSTDIR'' -ErrorAction Stop}catch{}; if(@((Get-MpPreference).ExclusionPath | %{$$_.TrimEnd(''\'')}) -contains ''$INSTDIR''){exit 0}else{exit 1}"'
+  ; check-exclusion.ps1 exits 0 = present, 1 = Defender active but missing, 2 = Defender not active
+  nsExec::Exec 'powershell -NoProfile -ExecutionPolicy Bypass -File "$PLUGINSDIR\check-exclusion.ps1" -Path "$INSTDIR"'
   Pop $0
   ${If} $0 == 0
     StrCpy $AvOk 1
@@ -113,8 +119,9 @@ Function AvRefresh
     ${NSD_SetText} $StatusLabel "Status: Defender isn't the active antivirus. If another AV flags the app, add this folder to its exclusions. You can click Next."
   ${Else}
     StrCpy $AvOk 0
-    ${NSD_SetText} $StatusLabel "Status: not added yet."
+    ${NSD_SetText} $StatusLabel "Status: not added yet - add the folder, then click 'I added it'."
   ${EndIf}
+  Call AvSetNext
 FunctionEnd
 
 Function AvCheckClick
@@ -124,6 +131,9 @@ FunctionEnd
 Function AvPageCreate
   !insertmacro MUI_HEADER_TEXT "Antivirus exclusion" "One quick step so your antivirus doesn't delete the app."
   CreateDirectory "$INSTDIR"
+  InitPluginsDir
+  File "/oname=$PLUGINSDIR\check-exclusion.ps1" "check-exclusion.ps1"
+  StrCpy $AvOk 0
   nsDialogs::Create 1018
   Pop $Dialog
   ${If} $Dialog == error
