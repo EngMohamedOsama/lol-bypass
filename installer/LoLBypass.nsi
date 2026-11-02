@@ -54,8 +54,9 @@ Var AvOk
 !define MUI_HEADERIMAGE_RIGHT
 !define MUI_HEADERIMAGE_BITMAP "header.bmp"
 !define MUI_HEADERIMAGE_UNBITMAP "header.bmp"
-!define MUI_BGCOLOR "010A13"
-!define MUI_TEXTCOLOR "F0E6D2"
+; (no MUI_BGCOLOR/TEXTCOLOR: the dark theme made the finish-page 'Run' checkbox
+;  text unreadable; the welcome/finish pages use the default light background + the
+;  themed side bitmap, so all text stays legible)
 !define MUI_ABORTWARNING
 
 !define MUI_WELCOMEPAGE_TITLE "Welcome to ${APPNAME}"

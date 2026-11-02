@@ -110,8 +110,9 @@ namespace LoLBypass
             else { st = Emblem.State.Starting; _state.Text = "RECONNECTING..."; _state.ForeColor = Theme.Gold; }
 
             if (_emblem.Current != st) _emblem.Current = st;
-            _dotTcp.ForeColor = g ? Theme.Teal : (_engine.Paused ? Theme.Dim : Theme.Red);
-            _dotUdp.ForeColor = w ? Theme.Teal : (_engine.Paused ? Theme.Dim : Theme.Red);
+            // gold (not red) while ON but a helper is momentarily restarting - it self-heals
+            _dotTcp.ForeColor = g ? Theme.Teal : (_engine.Paused ? Theme.Dim : Theme.Gold);
+            _dotUdp.ForeColor = w ? Theme.Teal : (_engine.Paused ? Theme.Dim : Theme.Gold);
             _main.Text = _engine.Paused ? "START BYPASS" : "STOP BYPASS";
             _main.Engaged = !_engine.Paused;
             _main.Enabled = !starting;

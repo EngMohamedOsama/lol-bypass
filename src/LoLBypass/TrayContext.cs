@@ -17,8 +17,8 @@ namespace LoLBypass
         readonly Engine _engine = new Engine();
         readonly NotifyIcon _tray;
         readonly MainForm _form;
-        readonly System.Windows.Forms.Timer _watchdog = new System.Windows.Forms.Timer { Interval = 10000 };
-        readonly System.Windows.Forms.Timer _ui = new System.Windows.Forms.Timer { Interval = 1500 };
+        readonly System.Windows.Forms.Timer _watchdog = new System.Windows.Forms.Timer { Interval = 3000 };
+        readonly System.Windows.Forms.Timer _ui = new System.Windows.Forms.Timer { Interval = 1000 };
         readonly ToolStripMenuItem _miToggle;
         readonly EventWaitHandle _showEvent;
         volatile bool _busy;
@@ -73,11 +73,18 @@ namespace LoLBypass
                 _tray.ShowBalloonTip(8000, "LoL Bypass", "Bypass files are missing - your antivirus may have removed them. Reinstall LoL Bypass.", ToolTipIcon.Error);
             }
 
-            if (!silent) ShowWindow();
-            RunBusy(() => _engine.Start(true), () =>
+            if (silent)
             {
-                if (silent) _tray.ShowBalloonTip(2500, "LoL Bypass", "Bypass active. Click the tray icon to open.", ToolTipIcon.Info);
-            });
+                // started with Windows, hidden - turn the bypass on automatically (nobody's here to click)
+                RunBusy(() => _engine.Start(true), () =>
+                    _tray.ShowBalloonTip(2500, "LoL Bypass", "Bypass active. Click the tray icon to open.", ToolTipIcon.Info));
+            }
+            else
+            {
+                // opened by the user - leave it OFF and wait for them to press START BYPASS
+                ShowWindow();
+                UpdateUi();
+            }
             _watchdog.Start(); _ui.Start();
         }
 

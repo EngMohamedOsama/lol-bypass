@@ -150,7 +150,18 @@ namespace LoLBypass
                 StartWinws();
                 Paused = false;
             }
-            Thread.Sleep(1500);
+            // a helper can lose its WinDivert handle on first launch (Vanguard / driver race);
+            // confirm both are alive and relaunch whichever died before we call it "on"
+            for (int i = 0; i < 3; i++)
+            {
+                Thread.Sleep(700);
+                lock (_lock)
+                {
+                    if (Paused) return;
+                    if (!GdpiRunning) StartGdpi();
+                    if (!WinwsRunning) StartWinws();
+                }
+            }
             if (restartVanguard) RestartVanguard();
             Log("bypass ON (strategy " + Strategy + ")");
         }
